@@ -1,78 +1,87 @@
 IoT SmartRoom UNIB
 
-Sistem Monitoring dan Pengelolaan Ruangan Cerdas Berbasis Internet of Things
+Sistem Penghitung Jumlah Orang di Ruang Kelas Berbasis Internet of Things (IoT)
 
 📌 Deskripsi Proyek
 
-IoT SmartRoom UNIB merupakan proyek berbasis Internet of Things (IoT) yang dirancang untuk mendukung penerapan konsep Smart Campus di lingkungan Universitas Bengkulu.
+IoT SmartRoom UNIB merupakan proyek berbasis Internet of Things (IoT) yang dirancang untuk membantu memantau dan menghitung jumlah orang yang berada di dalam ruang kelas secara real-time.
 
-Proyek ini bertujuan untuk melakukan monitoring kondisi ruangan secara real-time dengan memanfaatkan beberapa sensor yang terintegrasi melalui mikrokontroler ESP32. Sistem memungkinkan pengguna memantau aktivitas dan kondisi lingkungan ruangan melalui dashboard secara terpusat.
+Sistem ini menggunakan mikrokontroler ESP32 yang terintegrasi dengan sensor ultrasonik dan sensor suara. Sensor ultrasonik digunakan untuk mendeteksi keberadaan serta pergerakan orang pada area pintu masuk kelas, sedangkan sensor suara digunakan untuk mendeteksi aktivitas suara sebagai informasi pendukung kondisi ruangan.
 
-Data sensor akan dikirimkan ke server menggunakan protokol komunikasi IoT, kemudian disimpan dan ditampilkan dalam bentuk informasi yang mudah dipahami.
+Data hasil pembacaan sensor akan diproses oleh ESP32 dan dikirimkan ke server melalui jaringan Wi-Fi. Selanjutnya, data ditampilkan melalui dashboard sehingga jumlah orang di dalam kelas dapat dipantau secara langsung.
+
+Proyek ini diharapkan dapat mendukung penerapan konsep Smart Campus di lingkungan Universitas Bengkulu.
 
 🎯 Tujuan Proyek
 
-1. Membangun sistem monitoring ruangan berbasis IoT.
-2. Memantau aktivitas dan kondisi lingkungan ruangan secara real-time.
-3. Mengintegrasikan beberapa sensor menggunakan ESP32.
-4. Menyediakan dashboard untuk visualisasi data sensor.
-5. Menerapkan komunikasi MQTT dan HTTP/REST API.
-6. Mendukung efisiensi pengelolaan fasilitas dan ruangan kampus.
+1. Membuat sistem penghitung jumlah orang di dalam ruang kelas secara otomatis.
+2. Memanfaatkan ESP32 sebagai mikrokontroler utama.
+3. Mengintegrasikan sensor ultrasonik dan sensor suara.
+4. Menampilkan jumlah orang di kelas secara real-time.
+5. Menyediakan informasi aktivitas suara di dalam ruangan.
+6. Mendukung efisiensi pemantauan dan pengelolaan ruang kelas.
 
 🔧 Komponen Perangkat Keras
 
 Komponen	Fungsi
-ESP32	Mikrokontroler utama untuk membaca sensor dan mengirimkan data melalui Wi-Fi.
-Sensor Suara	Mendeteksi aktivitas suara dalam ruangan.
-Sensor Ultrasonik	Mendeteksi keberadaan objek berdasarkan jarak.
-Sensor Kelembapan	Memantau tingkat kelembapan lingkungan.
+ESP32	Mengolah data sensor dan mengirimkan data melalui Wi-Fi.
+Sensor Ultrasonik	Mendeteksi orang yang melewati area pintu masuk atau keluar kelas.
+Sensor Suara	Mendeteksi aktivitas suara di dalam kelas sebagai informasi pendukung.
 
 ⚙️ Teknologi yang Digunakan
 
 * ESP32: Mikrokontroler utama.
-* MQTT: Protokol komunikasi data sensor.
-* HTTP/REST API: Pertukaran data antara server dan aplikasi.
+* MQTT: Komunikasi pengiriman data sensor.
+* HTTP/REST API: Pertukaran data antara server dan dashboard.
 * OpenAPI 3.1: Dokumentasi REST API.
-* Database: Penyimpanan data sensor.
+* Database: Penyimpanan data jumlah orang dan aktivitas sensor.
 * Docker Compose: Pengelolaan layanan aplikasi.
-* Dashboard: Visualisasi data dan monitoring ruangan.
+* Dashboard: Visualisasi jumlah orang secara real-time.
 * TLS/mTLS: Pengamanan komunikasi data.
 * Authentication: Autentikasi pengguna dan perangkat.
 
-🏗️ Arsitektur Sistem
+🏗️ Alur Kerja Sistem
 
-Alur kerja sistem:
-
-1. Sensor membaca kondisi lingkungan dan aktivitas ruangan.
-2. ESP32 menerima dan memproses data sensor.
-3. ESP32 mengirimkan data melalui jaringan Wi-Fi menggunakan MQTT.
-4. Backend menerima dan mengolah data.
-5. Data disimpan ke dalam database.
-6. Dashboard mengambil dan menampilkan data melalui REST API.
-7. Sistem memberikan notifikasi apabila kondisi tertentu memenuhi aturan peringatan.
+1. Sensor ultrasonik mendeteksi orang yang melewati pintu kelas.
+2. ESP32 memproses hasil pembacaan sensor untuk memperbarui jumlah orang.
+3. Sensor suara mendeteksi aktivitas suara di dalam kelas.
+4. ESP32 mengirimkan data sensor ke server menggunakan MQTT.
+5. Backend menerima dan mengolah data.
+6. Data disimpan ke dalam database.
+7. Dashboard menampilkan jumlah orang dan informasi aktivitas suara secara real-time.
 
 📊 Fitur Utama
 
-* Monitoring data sensor secara real-time.
-* Pemantauan aktivitas suara.
-* Deteksi keberadaan objek.
-* Monitoring kelembapan ruangan.
+* Penghitungan jumlah orang di dalam kelas.
+* Monitoring jumlah orang secara real-time.
+* Deteksi aktivitas suara di dalam kelas.
 * Visualisasi data melalui dashboard.
-* Penyimpanan riwayat data sensor.
-* Sistem peringatan atau alert.
-* Analisis data untuk mendukung pengelolaan ruangan.
+* Penyimpanan riwayat jumlah orang.
+* Monitoring kondisi ruangan.
+* Sistem peringatan berdasarkan batas kapasitas kelas.
 
 📁 Struktur Repository
 
 IoT-SmartRoom-UNIB/
 │
 ├── backend/
+│   ├── src/
+│   ├── routes/
+│   └── controllers/
+│
 ├── frontend/
+│   ├── src/
+│   └── components/
+│
 ├── firmware/
-│   ├── sensors/
+│   ├── ultrasonic/
+│   ├── sound/
 │   └── main/
+│
 ├── database/
+│
 ├── docs/
+│   ├── architecture/
 │   └── openapi.yaml
 │
 ├── docker-compose.yml
@@ -93,7 +102,8 @@ No.	Nama	NPM
 Tahapan	Status
 Perencanaan sistem	Dalam proses
 Perancangan arsitektur	Dalam proses
-Integrasi sensor dengan ESP32	Belum dimulai
+Integrasi ESP32 dan sensor	Belum dimulai
+Implementasi penghitung orang	Belum dimulai
 Implementasi MQTT	Belum dimulai
 Pengembangan backend	Belum dimulai
 Pengembangan dashboard	Belum dimulai
