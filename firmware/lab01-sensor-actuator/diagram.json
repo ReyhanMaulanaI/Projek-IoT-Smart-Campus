@@ -1,39 +1,24 @@
 {
   "version": 1,
-  "author": "Komti",
+  "author": "Reyhan Maulana",
   "editor": "wokwi",
   "parts": [
-    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -97.66, "left": 99.7, "attrs": {} },
-    { "type": "wokwi-led", "id": "led1", "top": -157.2, "left": 215, "attrs": { "color": "red" } },
-    {
-      "type": "wokwi-dht22",
-      "id": "dht1",
-      "top": 180.3,
-      "left": 34.8,
-      "rotate": 180,
-      "attrs": {}
-    },
-    {
-      "type": "wokwi-pushbutton",
-      "id": "btn1",
-      "top": 9,
-      "left": 291,
-      "rotate": 270,
-      "attrs": { "color": "green", "xray": "1" }
-    }
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-dht22", "id": "dht1", "top": -110, "left": 120, "attrs": {} },
+    { "type": "wokwi-led", "id": "led1", "top": 40, "left": -110, "attrs": { "color": "red" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 120, "left": -110, "attrs": { "value": "220" } },
+    { "type": "wokwi-pushbutton", "id": "btn1", "top": 140, "left": 120, "attrs": { "color": "green" } }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
-    [ "dht1:VCC", "esp:3V3", "red", [ "v0" ] ],
-    [ "dht1:GND", "esp:GND.1", "black", [ "v0" ] ],
-    [ "dht1:SDA", "esp:15", "green", [ "h0" ] ],
-    [ "led1:A", "esp:2", "green", [ "v0" ] ],
-    [ "led1:C", "esp:GND.2", "green", [ "v0" ] ],
-    [ "btn1:1.l", "esp:4", "green", [ "h0" ] ],
-    [ "btn1:2.l", "esp:GND.3", "green", [ "h0" ] ],
-    [ "btn1:1.r", "esp:GND.3", "green", [ "v0" ] ],
-    [ "btn1:2.r", "esp:GND.3", "green", [ "h0" ] ]
-  ],
-  "dependencies": {}
+    [ "dht1:VCC", "esp:3V3", "red", [] ],
+    [ "dht1:GND", "esp:GND.1", "black", [] ],
+    [ "dht1:SDA", "esp:15", "green", [] ],
+    [ "led1:A", "r1:1", "red", [] ],
+    [ "r1:2", "esp:2", "red", [] ],
+    [ "led1:C", "esp:GND.2", "black", [] ],
+    [ "btn1:1.l", "esp:4", "blue", [] ],
+    [ "btn1:2.l", "esp:GND.2", "black", [] ]
+  ]
 }
