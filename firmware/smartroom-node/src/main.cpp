@@ -1,281 +1,238 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <ArduinoJson.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#include <Adafruit_BMP280.h>
+#include "esp_sleep.h"
+#include "driver/rtc_io.h"
 
-// --- KONFIGURASI WI-FI (WAJIB DIISI) ---
-const char* WIFI_SSID     = "Bebas";
-const char* WIFI_PASSWORD = "Dio2025r";
+#define I2C_SDA 21
+#define I2C_SCL 22
+#define OLED_ADDR 0x3C
+#define SENSOR_ADDR 0x76
 
-// --- DEFINISI PIN NODEMCU ESP8266MOD ---
-#define TRIG_OUTER    D1   // GPIO 5  - Ultrasonik 1 (Pintu Luar)
-#define ECHO_OUTER    D2   // GPIO 4
-#define TRIG_INNER    D5   // GPIO 14 - Ultrasonik 2 (Pintu Dalam)
-#define ECHO_INNER    D6   // GPIO 12
-#define SOUND_PIN     A0   // ADC0    - Sensor Suara (OUT)
-#define LED_LOAD_PIN  D7   // GPIO 13 - LED 1 (Beban Ruangan)
-#define LED_ALERT_PIN D0   // GPIO 16 - LED 2 (Peringatan Bising)
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
 
-// --- PARAMETER KALIBRASI ---
-const float DOOR_TRIGGER_CM          = 35.0;
-const unsigned long CROSS_TIMEOUT_MS = 2000;
-const int NOISE_THRESHOLD_ADC        = 180;
-const unsigned long ALERT_HOLD_MS    = 2000;
-const unsigned long TELEMETRY_MS     = 1500;
+#define WAKEUP_GPIO GPIO_NUM_15
+#define SLEEP_DURATION_US (10ULL * 1000000ULL) // 10 detik
+#define HISTORY_SIZE 5
 
-// --- VARIABEL STATUS ---
-ESP8266WebServer server(80);
-int peopleCount = 0;
-int entryState  = 0;
-float lastDistOuter = 999.0;
-float lastDistInner = 999.0;
-int lastNoiseAmp    = 0;
-bool lastIsNoisy    = false;
+struct SensorRecord {
+  uint32_t bootCount;
+  float temperature;
+  float humidity;
+  float pressure;
+  uint8_t wakeupReason;
+};
 
-unsigned long stateTimerMillis    = 0;
-unsigned long prevTelemetryMillis = 0;
-unsigned long noiseHoldUntil      = 0;
-int peakNoiseInWindow             = 0;
-unsigned long seqCounter          = 0;
+RTC_DATA_ATTR uint32_t rtcBootCount = 0;
+RTC_DATA_ATTR uint8_t rtcHistoryIndex = 0;
+RTC_DATA_ATTR uint8_t rtcHistoryCount = 0;
+RTC_DATA_ATTR SensorRecord rtcHistory[HISTORY_SIZE];
 
-// --- HALAMAN WEB DASHBOARD ---
-const char INDEX_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SmartRoom UNIB Monitor</title>
-  <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
-    .container { max-width: 680px; margin: 0 auto; }
-    h1 { font-size: 1.4rem; margin-bottom: 4px; color: #38bdf8; }
-    p.sub { color: #94a3b8; font-size: 0.9rem; margin-top: 0; margin-bottom: 20px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
-    .card { background: #1e293b; border-radius: 12px; padding: 18px; border: 1px solid #334155; }
-    .label { font-size: 0.85rem; color: #94a3b8; margin-bottom: 6px; }
-    .val { font-size: 2rem; font-weight: 700; }
-    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; margin-top: 8px; }
-    .ok { background: #065f46; color: #6ee7b7; }
-    .off { background: #334155; color: #cbd5e1; }
-    .warn { background: #991b1b; color: #fca5a5; }
-    button { margin-top: 18px; background: #0284c7; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
-    button:hover { background: #0369a1; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>SmartRoom Monitoring Node</h1>
-    <p class="sub">ESP8266MOD Real-Time Telemetry</p>
-    <div class="grid">
-      <div class="card">
-        <div class="label">Jumlah Orang di Ruangan</div>
-        <div class="val" id="count">0</div>
-        <span class="badge off" id="occ-badge">Kosong (LED D7 MATI)</span>
-      </div>
-      <div class="card">
-        <div class="label">Tingkat Kebisingan (ADC)</div>
-        <div class="val" id="noise">0</div>
-        <span class="badge ok" id="noise-badge">Tenang (LED D0 MATI)</span>
-      </div>
-      <div class="card">
-        <div class="label">Jarak Pintu Luar / Dalam</div>
-        <div class="val" style="font-size:1.3rem;" id="dist">- / - cm</div>
-        <span class="badge off" id="seq">Seq: 0</span>
-      </div>
-    </div>
-    <button onclick="resetCount()">Reset Hitungan Orang (0)</button>
-  </div>
-  <script>
-    async function fetchStatus() {
-      try {
-        const res = await fetch('/api/status');
-        const d = await res.json();
-        document.getElementById('count').textContent = d.people_count;
-        document.getElementById('noise').textContent = d.noise_amp;
-        document.getElementById('dist').textContent = d.dist_outer + ' / ' + d.dist_inner + ' cm';
-        document.getElementById('seq').textContent = 'Seq: ' + d.seq;
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_BME280 bme;
+Adafruit_BMP280 bmp;
 
-        const occBadge = document.getElementById('occ-badge');
-        occBadge.textContent = d.occupied ? 'Terisi (LED D7 NYALA)' : 'Kosong (LED D7 MATI)';
-        occBadge.className = 'badge ' + (d.occupied ? 'ok' : 'off');
+bool isBME280 = false;
+bool isBMP280 = false;
 
-        const noiseBadge = document.getElementById('noise-badge');
-        noiseBadge.textContent = d.noisy_alert ? 'Bising! (LED D0 NYALA)' : 'Tenang (LED D0 MATI)';
-        noiseBadge.className = 'badge ' + (d.noisy_alert ? 'warn' : 'ok');
-      } catch (e) {}
-    }
-    async function resetCount() {
-      await fetch('/api/reset');
-      fetchStatus();
-    }
-    setInterval(fetchStatus, 1000);
-    fetchStatus();
-  </script>
-</body>
-</html>
-)rawliteral";
+SemaphoreHandle_t i2cMutex = nullptr;
+SemaphoreHandle_t dataMutex = nullptr;
+SemaphoreHandle_t sensorDoneSem = nullptr;
+SemaphoreHandle_t readyToSleepSem = nullptr;
 
-float readDistanceCm(int trigPin, int echoPin) {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
+float latestTemp = 0.0f;
+float latestHum = 0.0f;
+float latestPres = 0.0f;
 
-  long duration = pulseIn(echoPin, HIGH, 25000);
-  if (duration == 0) return 999.0;
-  return (duration * 0.0343) / 2.0;
-}
-
-int readSoundAmplitude() {
-  unsigned long startWindow = millis();
-  int signalMax = 0;
-  int signalMin = 1023;
-
-  while (millis() - startWindow < 30) {
-    int sample = analogRead(SOUND_PIN);
-    if (sample > signalMax) signalMax = sample;
-    if (sample < signalMin) signalMin = sample;
-    yield();
+const char* getWakeupReasonText(esp_sleep_wakeup_cause_t reason) {
+  switch (reason) {
+    case ESP_SLEEP_WAKEUP_TIMER: return "TIMER (10s)";
+    case ESP_SLEEP_WAKEUP_EXT0:  return "EXT0 (GPIO15)";
+    default:                     return "POWER_ON/RESET";
   }
-  return (signalMax - signalMin);
 }
 
-void buildJsonPayload(String &output, int noiseVal) {
-  JsonDocument doc;
-  doc["device_id"]    = "smartroom-unib-8266";
-  doc["seq"]          = seqCounter;
-  doc["dist_outer"]   = round(lastDistOuter * 10) / 10.0;
-  doc["dist_inner"]   = round(lastDistInner * 10) / 10.0;
-  doc["people_count"] = peopleCount;
-  doc["occupied"]     = (peopleCount > 0);
-  doc["noise_amp"]    = noiseVal;
-  doc["noisy_alert"]  = lastIsNoisy;
-  doc["load_led_on"]  = (peopleCount > 0);
-  serializeJson(doc, output);
+void scanI2CBus() {
+  Serial.println("\n[I2C SCANNER] Memindai bus I2C (SDA=21, SCL=22)...");
+  int count = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("  -> Ditemukan perangkat di 0x%02X", addr);
+      if (addr == OLED_ADDR) Serial.print(" (OLED SSD1306)");
+      else if (addr == SENSOR_ADDR) Serial.print(" (BME280/BMP280)");
+      Serial.println();
+      count++;
+    }
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+  Serial.printf("[I2C SCANNER] Total perangkat aktif: %d\n", count);
 }
 
-void handleRoot() {
-  server.send_P(200, "text/html", INDEX_HTML);
+void printRTCHistory() {
+  Serial.println("--- Riwayat Data di RTC_DATA_ATTR ---");
+  for (uint8_t i = 0; i < rtcHistoryCount; i++) {
+    Serial.printf("  [%u] Boot #%lu | Temp: %.2f C | Hum: %.1f %% | Pres: %.2f hPa | Wake: %s\n",
+                  i + 1,
+                  (unsigned long)rtcHistory[i].bootCount,
+                  rtcHistory[i].temperature,
+                  rtcHistory[i].humidity,
+                  rtcHistory[i].pressure,
+                  getWakeupReasonText((esp_sleep_wakeup_cause_t)rtcHistory[i].wakeupReason));
+  }
 }
 
-void handleStatus() {
-  String json;
-  buildJsonPayload(json, lastNoiseAmp);
-  server.send(200, "application/json", json);
+// Task Core 0: Baca sensor & simpan ke RTC_DATA_ATTR
+void taskSensor(void *pvParameters) {
+  (void)pvParameters;
+  float temp = NAN;
+  float hum = 0.0f;
+  float pres = NAN;
+
+  if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    if (bme.begin(SENSOR_ADDR)) {
+      isBME280 = true;
+      temp = bme.readTemperature();
+      hum = bme.readHumidity();
+      pres = bme.readPressure() / 100.0F;
+    } else if (bmp.begin(SENSOR_ADDR)) {
+      isBMP280 = true;
+      temp = bmp.readTemperature();
+      hum = 0.0f;
+      pres = bmp.readPressure() / 100.0F;
+    }
+    xSemaphoreGive(i2cMutex);
+  }
+
+  esp_sleep_wakeup_cause_t reason = esp_sleep_get_wakeup_cause();
+
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+    rtcBootCount++;
+    latestTemp = temp;
+    latestHum = hum;
+    latestPres = pres;
+
+    rtcHistory[rtcHistoryIndex].bootCount = rtcBootCount;
+    rtcHistory[rtcHistoryIndex].temperature = temp;
+    rtcHistory[rtcHistoryIndex].humidity = hum;
+    rtcHistory[rtcHistoryIndex].pressure = pres;
+    rtcHistory[rtcHistoryIndex].wakeupReason = (uint8_t)reason;
+
+    rtcHistoryIndex = (rtcHistoryIndex + 1) % HISTORY_SIZE;
+    if (rtcHistoryCount < HISTORY_SIZE) {
+      rtcHistoryCount++;
+    }
+    xSemaphoreGive(dataMutex);
+  }
+
+  Serial.printf("[Core %d - TaskSensor] Boot #%lu | T=%.2f C | H=%.1f%% | P=%.2f hPa\n",
+                xPortGetCoreID(), (unsigned long)rtcBootCount, temp, hum, pres);
+
+  xSemaphoreGive(sensorDoneSem);
+  vTaskDelete(nullptr);
 }
 
-void handleReset() {
-  peopleCount = 0;
-  entryState = 0;
-  server.send(200, "application/json", "{\"status\":\"reset_ok\"}");
+// Task Core 1: Perbarui OLED
+void taskOLED(void *pvParameters) {
+  (void)pvParameters;
+
+  xSemaphoreTake(sensorDoneSem, portMAX_DELAY);
+
+  float tempCopy = NAN;
+  float humCopy = 0.0f;
+  float presCopy = NAN;
+  uint32_t bootCopy = 0;
+  uint8_t histCountCopy = 0;
+
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+    tempCopy = latestTemp;
+    humCopy = latestHum;
+    presCopy = latestPres;
+    bootCopy = rtcBootCount;
+    histCountCopy = rtcHistoryCount;
+    xSemaphoreGive(dataMutex);
+  }
+
+  esp_sleep_wakeup_cause_t reason = esp_sleep_get_wakeup_cause();
+
+  if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+
+    display.printf("Boot #%lu (Core %d)\n", (unsigned long)bootCopy, xPortGetCoreID());
+    display.printf("Wake: %s\n", getWakeupReasonText(reason));
+    display.println("---------------------");
+    display.printf("Temp: %.2f C\n", tempCopy);
+    if (isBME280) {
+      display.printf("Hum : %.1f %%\n", humCopy);
+    }
+    display.printf("Pres: %.2f hPa\n", presCopy);
+    display.printf("RTC Log: %u/%u data\n", histCountCopy, HISTORY_SIZE);
+    display.display();
+    xSemaphoreGive(i2cMutex);
+  }
+
+  Serial.printf("[Core %d - TaskOLED] OLED diperbarui.\n", xPortGetCoreID());
+  printRTCHistory();
+
+  vTaskDelay(pdMS_TO_TICKS(1500));
+
+  xSemaphoreGive(readyToSleepSem);
+  vTaskDelete(nullptr);
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
 
-  pinMode(TRIG_OUTER, OUTPUT);
-  pinMode(ECHO_OUTER, INPUT);
-  pinMode(TRIG_INNER, OUTPUT);
-  pinMode(ECHO_INNER, INPUT);
+  esp_sleep_wakeup_cause_t reason = esp_sleep_get_wakeup_cause();
+  Serial.println("==========================================");
+  Serial.printf("ESP32 Bangun! Penyebab: %s\n", getWakeupReasonText(reason));
 
-  pinMode(LED_LOAD_PIN, OUTPUT);
-  pinMode(LED_ALERT_PIN, OUTPUT);
-  pinMode(LED_BUILTIN, OUTPUT);
+  Wire.begin(I2C_SDA, I2C_SCL);
 
-  digitalWrite(LED_LOAD_PIN, LOW);
-  digitalWrite(LED_ALERT_PIN, LOW);
-  digitalWrite(LED_BUILTIN, HIGH);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("\nMenghubungkan ke Wi-Fi");
-  int retries = 0;
-  while (WiFi.status() != WL_CONNECTED && retries < 30) {
-    delay(500);
-    Serial.print(".");
-    retries++;
+  if (reason == ESP_SLEEP_WAKEUP_UNDEFINED) {
+    scanI2CBus();
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\n{\"event\":\"wifi_connected\",\"ip\":\"%s\"}\n", WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("\n{\"event\":\"wifi_timeout\",\"mode\":\"offline_serial\"}");
+  i2cMutex = xSemaphoreCreateMutex();
+  dataMutex = xSemaphoreCreateMutex();
+  sensorDoneSem = xSemaphoreCreateBinary();
+  readyToSleepSem = xSemaphoreCreateBinary();
+
+  if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+      Serial.println("Gagal inisialisasi OLED SSD1306 di 0x3C!");
+    }
+    xSemaphoreGive(i2cMutex);
   }
 
-  server.on("/", handleRoot);
-  server.on("/api/status", handleStatus);
-  server.on("/api/reset", handleReset);
-  server.begin();
+  xTaskCreatePinnedToCore(taskSensor, "TaskSensor", 4096, nullptr, 2, nullptr, 0);
+  xTaskCreatePinnedToCore(taskOLED, "TaskOLED", 4096, nullptr, 2, nullptr, 1);
 }
 
 void loop() {
-  server.handleClient();
-  unsigned long now = millis();
-
-  // 1. Baca Jarak Kedua Sensor Ultrasonik
-  lastDistOuter = readDistanceCm(TRIG_OUTER, ECHO_OUTER);
-  delay(15);
-  lastDistInner = readDistanceCm(TRIG_INNER, ECHO_INNER);
-
-  bool outerTriggered = (lastDistOuter < DOOR_TRIGGER_CM);
-  bool innerTriggered = (lastDistInner < DOOR_TRIGGER_CM);
-
-  // 2. Logika Penghitung Orang Masuk & Keluar
-  if (entryState == 0) {
-    if (outerTriggered && !innerTriggered) {
-      entryState = 1;
-      stateTimerMillis = now;
-    } else if (innerTriggered && !outerTriggered) {
-      entryState = 2;
-      stateTimerMillis = now;
+  if (xSemaphoreTake(readyToSleepSem, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+      display.ssd1306_command(SSD1306_DISPLAYOFF);
+      xSemaphoreGive(i2cMutex);
     }
-  } else if (entryState == 1) {
-    if (innerTriggered) {
-      peopleCount++;
-      entryState = 0;
-      Serial.printf("{\"event\":\"person_enter\",\"people_count\":%d}\n", peopleCount);
-      delay(400);
-    } else if (now - stateTimerMillis > CROSS_TIMEOUT_MS) {
-      entryState = 0;
-    }
-  } else if (entryState == 2) {
-    if (outerTriggered) {
-      if (peopleCount > 0) peopleCount--;
-      entryState = 0;
-      Serial.printf("{\"event\":\"person_exit\",\"people_count\":%d}\n", peopleCount);
-      delay(400);
-    } else if (now - stateTimerMillis > CROSS_TIMEOUT_MS) {
-      entryState = 0;
-    }
-  }
 
-  // 3. Baca Tingkat Kebisingan & Tahan Peringatan 2 Detik
-  int noiseLevel = readSoundAmplitude();
-  if (noiseLevel > peakNoiseInWindow) {
-    peakNoiseInWindow = noiseLevel;
-  }
-  if (noiseLevel > NOISE_THRESHOLD_ADC) {
-    noiseHoldUntil = now + ALERT_HOLD_MS;
-  }
-  lastIsNoisy = (now < noiseHoldUntil);
-  lastNoiseAmp = lastIsNoisy ? max(noiseLevel, peakNoiseInWindow) : noiseLevel;
+    Serial.println("Memasuki Deep Sleep 10 detik (Timer + EXT0 GPIO 15)...\n");
+    Serial.flush();
 
-  // 4. Kendali LED Otomatis
-  bool roomOccupied = (peopleCount > 0);
-  digitalWrite(LED_LOAD_PIN, roomOccupied ? HIGH : LOW);
-  digitalWrite(LED_BUILTIN, roomOccupied ? LOW : HIGH);
-  digitalWrite(LED_ALERT_PIN, lastIsNoisy ? HIGH : LOW);
-
-  // 5. Kirim Telemetri JSON ke Serial
-  if (now - prevTelemetryMillis >= TELEMETRY_MS) {
-    prevTelemetryMillis = now;
-    seqCounter++;
-
-    String jsonOut;
-    buildJsonPayload(jsonOut, peakNoiseInWindow);
-    Serial.println(jsonOut);
-    peakNoiseInWindow = 0;
+    rtc_gpio_pullup_dis(WAKEUP_GPIO);
+    rtc_gpio_pulldown_en(WAKEUP_GPIO);
+    esp_sleep_enable_timer_wakeup(SLEEP_DURATION_US);
+    esp_sleep_enable_ext0_wakeup(WAKEUP_GPIO, 1);
+    esp_deep_sleep_start();
   }
 }
