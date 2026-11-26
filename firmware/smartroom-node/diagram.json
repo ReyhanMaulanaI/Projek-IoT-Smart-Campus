@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "author": "Mahasiswa IoT",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "board-ssd1306",
+      "id": "oled1",
+      "top": -130,
+      "left": 140,
+      "attrs": { "i2cAddress": "0x3c" }
+    },
+    {
+      "type": "wokwi-bme280",
+      "id": "bme1",
+      "top": 40,
+      "left": 180,
+      "attrs": { "i2cAddress": "0x76" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 150,
+      "left": -130,
+      "attrs": { "color": "green", "label": "EXT0 Wake (GPIO15)" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_pulldown",
+      "top": 210,
+      "left": -120,
+      "attrs": { "value": "10000" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+
+    [ "oled1:GND", "esp:GND.1", "black", [ "v-10", "h-60" ] ],
+    [ "oled1:VCC", "esp:3V3", "red", [ "v-20", "h-170" ] ],
+    [ "oled1:SCL", "esp:22", "yellow", [ "v-30", "h-40" ] ],
+    [ "oled1:SDA", "esp:21", "green", [ "v-40", "h-30" ] ],
+
+    [ "bme1:GND", "esp:GND.2", "black", [ "h-30", "v30" ] ],
+    [ "bme1:VCC", "esp:3V3", "red", [ "h-40", "v-90" ] ],
+    [ "bme1:SCL", "esp:22", "yellow", [ "h-20", "v-40" ] ],
+    [ "bme1:SDA", "esp:21", "green", [ "h-10", "v-30" ] ],
+
+    [ "btn1:1.l", "esp:3V3", "red", [ "h-20", "v-160" ] ],
+    [ "btn1:2.r", "esp:15", "blue", [ "h30", "v-30" ] ],
+    [ "btn1:2.r", "r_pulldown:1", "blue", [ "v20" ] ],
+    [ "r_pulldown:2", "esp:GND.3", "black", [ "h80", "v-100" ] ]
+  ],
+  "dependencies": {}
+}
