@@ -1,0 +1,75 @@
+
+{
+  "version": 1,
+  "author": "IoT Smart Campus",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "board-bmp180",
+      "id": "bmp",
+      "top": -100,
+      "left": 250,
+      "attrs": {}
+    },
+    {
+      "type": "board-ssd1306",
+      "id": "oled",
+      "top": 100,
+      "left": 250,
+      "attrs": {
+        "i2cAddress": "0x3c"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn",
+      "top": 250,
+      "left": 250,
+      "attrs": {
+        "color": "blue",
+        "label": "WAKE"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led",
+      "top": 350,
+      "left": 250,
+      "attrs": {
+        "color": "blue"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 350,
+      "left": 350,
+      "attrs": {
+        "value": "220"
+      }
+    }
+  ],
+  "connections": [
+    [ "esp:3V3", "bmp:3.3V", "red", [ "h61.91", "v-79.52", "h163.2", "v-134.43" ] ],
+    [ "esp:GND.1", "bmp:GND", "black", [ "h71.51", "v54.88", "h201.6", "v-288.03" ] ],
+    [ "esp:D21", "bmp:SDA", "green", [ "h234.71", "v-127.55" ] ],
+    [ "esp:D22", "bmp:SCL", "blue", [ "h244.31", "v-108.35" ] ],
+    [ "esp:3V3", "oled:VCC", "red", [ "h90.71", "v-69.92", "h105.62" ] ],
+    [ "esp:GND.1", "oled:GND", "black", [ "h33.11", "v-50.72", "h153.77" ] ],
+    [ "esp:D21", "oled:SDA", "green", [] ],
+    [ "esp:D22", "oled:SCL", "blue", [] ],
+    [ "esp:D15", "btn:1.l", "green", [ "h119.51", "v125.88" ] ],
+    [ "esp:GND.1", "btn:1.r", "black", [ "h42.71", "v64.48", "h173" ] ],
+    [ "esp:2", "led:A", "green", [] ],
+    [ "led:C", "r1:1", "green", [] ],
+    [ "r1:2", "esp:GND.1", "black", [ "v-29.25", "h-284", "v-179.68" ] ]
+  ],
+  "dependencies": {}
+}
